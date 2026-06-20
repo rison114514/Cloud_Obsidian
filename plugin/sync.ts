@@ -1,6 +1,7 @@
 import { Vault, Notice, TFile, TFolder } from "obsidian";
 import { AuthManager } from "./auth";
 import { WSClient } from "./ws";
+import { FileWatcher } from "./fileWatcher";
 
 /**
  * SyncEngine orchestrates bidirectional sync between the local vault and the server.
@@ -9,32 +10,42 @@ export class SyncEngine {
 	private vault: Vault;
 	private auth: AuthManager;
 	private ws: WSClient | null = null;
+	private fileWatcher: FileWatcher | null = null;
 	private lastSyncTime: number = 0; // unix milliseconds
 	private syncInProgress: boolean = false;
 	private pullInterval: ReturnType<typeof setInterval> | null = null;
 	private onStatusChange?: (status: SyncStatus) => void;
+	private recentPushTime: number = 0; // suppress WS-triggered pull right after push
 
-	constructor(vault: Vault, auth: AuthManager, onStatusChange?: (status: SyncStatus) => void) {
+	constructor(
+		vault: Vault,
+		auth: AuthManager,
+		onStatusChange?: (status: SyncStatus) => void
+	) {
 		this.vault = vault;
 		this.auth = auth;
 		this.onStatusChange = onStatusChange;
+	}
+
+	/** Set the FileWatcher so we can suppress self-triggered events. */
+	setFileWatcher(fw: FileWatcher): void {
+		this.fileWatcher = fw;
 	}
 
 	/**
 	 * Start background sync: WebSocket for real-time push + periodic pull.
 	 */
 	start(): void {
-		// Connect WebSocket for real-time server push notifications.
 		if (this.auth.isLoggedIn) {
 			this.connectWS();
 		}
 
-		// Periodic pull every 30 seconds as fallback.
+		// Periodic pull every 60 seconds as fallback (was 30, longer to reduce noise).
 		this.pullInterval = setInterval(() => {
 			if (this.auth.isLoggedIn && !this.syncInProgress) {
 				this.pull();
 			}
-		}, 30_000);
+		}, 60_000);
 	}
 
 	/**
@@ -51,16 +62,15 @@ export class SyncEngine {
 			this.auth.getServerUrl(),
 			token,
 			() => {
-				// On message: server pushed a change, pull latest.
+				// Suppress pull if we just pushed (within 3 seconds).
+				if (Date.now() - this.recentPushTime < 3000) {
+					return;
+				}
 				this.setStatus("pulling");
 				this.pull();
 			},
-			() => {
-				this.setStatus("online");
-			},
-			() => {
-				this.setStatus("offline");
-			}
+			() => this.setStatus("online"),
+			() => this.setStatus("offline")
 		);
 		this.ws.connect();
 	}
@@ -82,18 +92,18 @@ export class SyncEngine {
 
 			const conflictCount = resp.conflicts?.length || 0;
 			if (conflictCount > 0) {
-				new Notice(`⚠️ ${conflictCount} conflict(s) detected — check .conflict files`);
+				new Notice(`⚠️ ${conflictCount} conflict(s) detected`);
 			}
 
 			const acceptedCount = resp.accepted?.length || 0;
 			if (acceptedCount > 0) {
 				this.lastSyncTime = Date.now();
+				this.recentPushTime = Date.now(); // suppress immediate WS pull
 				this.setStatus("online");
 			}
 		} catch (e: any) {
 			console.error("[Cloud-Obsidian] Push failed:", e.message);
-			this.setStatus("error", e.message);
-			new Notice(`Sync push failed: ${e.message}`);
+			this.setStatus("error");
 		} finally {
 			this.syncInProgress = false;
 		}
@@ -129,14 +139,14 @@ export class SyncEngine {
 			console.log(`[Cloud-Obsidian] Pulled ${changes.length} changes`);
 		} catch (e: any) {
 			console.error("[Cloud-Obsidian] Pull failed:", e.message);
-			this.setStatus("error", e.message);
+			this.setStatus("error");
 		} finally {
 			this.syncInProgress = false;
 		}
 	}
 
 	/**
-	 * Initial full sync: pull all remote files to an empty (or existing) vault.
+	 * Initial full sync: pull all remote files to this vault.
 	 */
 	async fullSync(): Promise<void> {
 		if (!this.auth.isLoggedIn) return;
@@ -145,7 +155,6 @@ export class SyncEngine {
 		this.setStatus("syncing");
 
 		try {
-			// Pull all changes since epoch (0).
 			const resp = await this.auth.request("POST", "/api/sync/pull", {
 				last_sync: 0,
 			});
@@ -160,7 +169,7 @@ export class SyncEngine {
 			new Notice(`✅ Full sync complete — ${changes.length} files`);
 		} catch (e: any) {
 			console.error("[Cloud-Obsidian] Full sync failed:", e.message);
-			this.setStatus("error", e.message);
+			this.setStatus("error");
 			new Notice(`Full sync failed: ${e.message}`);
 		} finally {
 			this.syncInProgress = false;
@@ -169,15 +178,20 @@ export class SyncEngine {
 
 	/**
 	 * Apply a remote change to the local vault.
+	 * CRITICAL: tells FileWatcher to ignore this path to avoid sync loop.
 	 */
 	private async applyRemoteChange(change: { path: string; action: string; content?: string }): Promise<void> {
 		const { path, action, content } = change;
+
+		// Tell FileWatcher to skip this path — we wrote it, don't push it back!
+		if (this.fileWatcher) {
+			this.fileWatcher.ignorePath(path);
+		}
 
 		try {
 			switch (action) {
 				case "create":
 				case "update": {
-					// Ensure parent folder exists.
 					const dir = path.substring(0, path.lastIndexOf("/"));
 					if (dir) {
 						const folder = this.vault.getAbstractFileByPath(dir);
@@ -203,7 +217,7 @@ export class SyncEngine {
 				}
 			}
 		} catch (e: any) {
-			console.error(`[Cloud-Obsidian] Failed to apply change "${action} ${path}":`, e.message);
+			console.error(`[Cloud-Obsidian] Failed to apply "${action} ${path}":`, e.message);
 		}
 	}
 
@@ -221,7 +235,7 @@ export class SyncEngine {
 		}
 	}
 
-	private setStatus(status: SyncStatus, error?: string): void {
+	private setStatus(status: SyncStatus): void {
 		if (this.onStatusChange) {
 			this.onStatusChange(status);
 		}
