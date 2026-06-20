@@ -1,0 +1,26 @@
+[Unit]
+Description=Cloud-Obsidian Sync Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/lib/cloud-obsidian
+Environment="CLOUD_OBSIDIAN_PORT=8080"
+Environment="CLOUD_OBSIDIAN_DATA_DIR=/var/lib/cloud-obsidian"
+Environment="CLOUD_OBSIDIAN_JWT_SECRET=change-me-to-a-random-string"
+ExecStart=/usr/local/bin/cloud-obsidian-server
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/cloud-obsidian
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

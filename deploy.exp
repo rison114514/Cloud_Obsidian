@@ -1,0 +1,106 @@
+#!/usr/bin/env expect
+
+# ============================================================
+# Cloud-Obsidian 全自动部署 — 纯 Expect 脚本
+# 用法: bash deploy.sh  (会自动设置环境变量并调用此脚本)
+# 环境变量: SERVER_HOST, SERVER_USER, SERVER_PASS
+# ============================================================
+
+set timeout 600
+
+# Read from environment (set by deploy.sh from .env)
+set server_host $env(SERVER_HOST)
+set server_user $env(SERVER_USER)
+set server_pass $env(SERVER_PASS)
+set server_addr "${server_user}@${server_host}"
+set project_dir [file dirname [file normalize [info script]]]
+set server_dir "${project_dir}/server"
+
+proc log {msg} { send_user "\033\[0;32m\[✓\]\033\[0m $msg\n" }
+proc warn {msg} { send_user "\033\[1;33m\[!\]\033\[0m $msg\n" }
+proc info {msg} { send_user "\033\[0;36m\[>\]\033\[0m $msg\n" }
+
+# ---------- Connect helpers ----------
+proc do_ssh {cmd {timeout_sec 30}} {
+    global server_addr server_pass
+    set timeout $timeout_sec
+    spawn bash -c "ssh -o StrictHostKeyChecking=no ${server_addr} '$cmd'"
+    expect {
+        "password:" { send "${server_pass}\r"; exp_continue }
+        "yes/no"   { send "yes\r"; exp_continue }
+        eof { }
+    }
+    return $expect_out(buffer)
+}
+
+proc do_scp {src dst {timeout_sec 120}} {
+    global server_pass
+    set timeout $timeout_sec
+    spawn bash -c "scp -r -o StrictHostKeyChecking=no ${src} ${dst}"
+    expect {
+        "password:" { send "${server_pass}\r"; exp_continue }
+        "yes/no"   { send "yes\r"; exp_continue }
+        eof { }
+    }
+    return $expect_out(buffer)
+}
+
+# ============================================================
+# Step 1: 清理旧代码
+# ============================================================
+info "Step 1/5: 清理服务器旧代码..."
+do_ssh "rm -rf cloud-obsidian-server" 10
+log "旧代码已清理"
+
+# ============================================================
+# Step 2: 上传代码
+# ============================================================
+info "Step 2/5: 上传新代码..."
+do_scp "${server_dir}" "${server_addr}:~/cloud-obsidian-server" 120
+log "代码上传完成"
+
+# ============================================================
+# Step 3: 检查环境
+# ============================================================
+info "Step 3/5: 检查服务器环境..."
+do_ssh "cat /etc/os-release | head -2; echo ---; which go 2>/dev/null && go version || echo GO_NEED_INSTALL; echo ---; git --version" 15
+log "环境检查完成"
+
+# ============================================================
+# Step 4: 编译并安装
+# ============================================================
+info "Step 4/5: 编译并部署..."
+do_ssh "bash cloud-obsidian-server/deploy/remote-install.sh" 600
+log "编译部署完成"
+
+# ============================================================
+# Step 5: 验证
+# ============================================================
+info "Step 5/5: 验证服务..."
+set verify_output [do_ssh "curl -s http://localhost:9090/api/health" 10]
+
+if {[string match "*ok*" $verify_output]} {
+    log "✅ 服务正常运行！"
+} else {
+    warn "服务可能未正常启动，请手动检查"
+    send_user "    手动: ssh ${server_addr}\n"
+    send_user "    cloud-obsidian-ctl status\n"
+    send_user "    cloud-obsidian-ctl log\n"
+}
+
+send_user "\n"
+send_user "============================================\n"
+send_user "  Cloud-Obsidian 部署完成！\n"
+send_user "============================================\n"
+send_user "\n"
+send_user "  服务器地址: http://${server_host}:9090\n"
+send_user "  API 状态:   http://${server_host}:9090/api/health\n"
+send_user "\n"
+send_user "  注册账号:\n"
+send_user "    curl -X POST http://${server_host}:9090/api/auth/register \\\\\n"
+send_user '      -H "Content-Type: application/json" \\'
+send_user "\n"
+send_user "      -d '{\"username\":\"yourname\",\"password\":\"yourpass\"}'\n"
+send_user "\n"
+
+exit 0

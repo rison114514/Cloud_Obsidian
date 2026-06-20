@@ -1,0 +1,26 @@
+# 敏感信息
+.env
+
+# 部署日志
+deploy.log
+*.log
+
+# Node.js
+plugin/node_modules/
+plugin/package-lock.json
+
+# Go 编译产物
+server/cloud-obsidian-server
+
+# macOS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 临时文件
+/tmp/

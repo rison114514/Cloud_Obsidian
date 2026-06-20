@@ -1,0 +1,61 @@
+/* Cloud Obsidian Sync — Plugin Styles */
+
+/* ---- Login Modal ---- */
+.cloud-obsidian-login-modal h2 {
+	margin-bottom: 4px;
+}
+
+.cloud-obsidian-subtitle {
+	color: var(--text-muted);
+	margin-bottom: 16px;
+	font-size: 0.9em;
+}
+
+.cloud-obsidian-button-row {
+	display: flex;
+	gap: 12px;
+	margin-top: 16px;
+	justify-content: flex-end;
+}
+
+.cloud-obsidian-button-row button {
+	padding: 8px 20px;
+	border-radius: 4px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--interactive-normal);
+	color: var(--text-normal);
+	cursor: pointer;
+	font-size: 14px;
+}
+
+.cloud-obsidian-button-row button.mod-cta {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.cloud-obsidian-button-row button:hover {
+	opacity: 0.85;
+}
+
+/* ---- Status Bar ---- */
+.cloud-obsidian-status {
+	font-size: 12px;
+}
+
+/* ---- Settings Tab ---- */
+.cloud-obsidian-status-section {
+	padding: 12px 16px;
+	margin-bottom: 16px;
+	border-radius: 6px;
+	background: var(--background-secondary);
+}
+
+.cloud-obsidian-status-section p {
+	margin: 0;
+	font-size: 14px;
+}
+
+.cloud-obsidian-login-area {
+	padding: 12px 0;
+}

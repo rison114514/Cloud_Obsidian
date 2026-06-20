@@ -1,0 +1,10 @@
+{
+  "id": "cloud-obsidian-sync",
+  "name": "Cloud Obsidian Sync",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "自托管 Obsidian 多端同步插件。连接你自己的服务器，实现笔记实时同步与 Git 版本管理。",
+  "author": "Cloud-Obsidian",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
