@@ -94,20 +94,50 @@ export class SyncEngine {
 		} finally { this.syncInProgress = false; }
 	}
 
+	/** Push all local markdown files to server — ensures cloud mirrors local. */
 	async fullSync(): Promise<void> {
 		if (!this.auth.isLoggedIn) return;
 		this.syncInProgress = true;
 		this.setStatus("syncing");
+		try {
+			const files = this.vault.getMarkdownFiles();
+			const changes: any[] = [];
+			for (const f of files) {
+				const content = await this.vault.read(f);
+				changes.push({ path: f.path, action: "update", content, clientMtime: f.stat.mtime });
+			}
+			if (changes.length > 0) {
+				await this.auth.request("POST", "/api/sync/push", {
+					vault: this.vaultName,
+					changes,
+					device_name: "obsidian-mac",
+				});
+			}
+			this.lastSyncTime = Date.now();
+			this.recentPushTime = Date.now();
+			this.setStatus("online");
+			new Notice(`✅ Pushed ${changes.length} files to cloud`);
+		} catch (e: any) {
+			this.setStatus("error");
+			new Notice(`Push failed: ${e.message}`);
+		} finally { this.syncInProgress = false; }
+	}
+
+	/** Pull all remote files from server (use when switching devices). */
+	async pullAll(): Promise<void> {
+		if (!this.auth.isLoggedIn) return;
+		this.syncInProgress = true;
+		this.setStatus("pulling");
 		try {
 			const resp = await this.auth.request("POST", "/api/sync/pull", { vault: this.vaultName, last_sync: 0 });
 			const changes = resp.changes || [];
 			for (const c of changes) await this.applyRemoteChange(c);
 			this.lastSyncTime = resp.server_time || Date.now();
 			this.setStatus("online");
-			new Notice(`✅ Full sync — ${changes.length} files`);
+			new Notice(`✅ Pulled ${changes.length} files from cloud`);
 		} catch (e: any) {
 			this.setStatus("error");
-			new Notice(`Full sync failed: ${e.message}`);
+			new Notice(`Pull failed: ${e.message}`);
 		} finally { this.syncInProgress = false; }
 	}
 

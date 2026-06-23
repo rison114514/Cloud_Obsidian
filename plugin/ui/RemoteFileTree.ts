@@ -36,7 +36,7 @@ export class RemoteFileTree extends ItemView {
 		const header = root.createDiv({ cls: "cots-header" });
 		header.createSpan({ text: `📁 ${this.vaultName}`, cls: "cots-title" });
 		const btns = header.createDiv({ cls: "cots-actions" });
-		btns.createEl("button", { text: "🔄 Sync", cls: "mod-cta" }).addEventListener("click", () => this.onSyncRequest());
+		btns.createEl("button", { text: "🔼 Push All", cls: "mod-cta" }).addEventListener("click", () => this.onSyncRequest());
 		btns.createEl("button", { text: "↻ Refresh" }).addEventListener("click", () => this.render());
 
 		// Body

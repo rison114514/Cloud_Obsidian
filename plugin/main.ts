@@ -67,10 +67,12 @@ export default class CloudObsidianPlugin extends Plugin {
 			if (!this.auth.isLoggedIn) { new Notice("Please login first"); return; }
 			this.toggleRemoteTree();
 		}});
-		this.addCommand({ id: "cloud-obsidian-sync", name: "Full Sync Now", callback: () => {
+		this.addCommand({ id: "cloud-obsidian-sync", name: "Push All to Cloud", callback: () => {
 			if (this.auth.isLoggedIn) { this.syncEngine?.fullSync(); } else { new Notice("Please login first"); }
 		}});
-		this.addCommand({ id: "cloud-obsidian-push", name: "Push Now", callback: () => this.manualPush() });
+		this.addCommand({ id: "cloud-obsidian-pull", name: "Pull All from Cloud", callback: () => {
+			if (this.auth.isLoggedIn) { this.syncEngine?.pullAll(); } else { new Notice("Please login first"); }
+		}});
 
 		this.addSettingTab(new SettingsTab(this.app, this));
 

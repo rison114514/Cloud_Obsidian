@@ -297,11 +297,43 @@ var SyncEngine = class {
       this.syncInProgress = false;
     }
   }
+  /** Push all local markdown files to server — ensures cloud mirrors local. */
   async fullSync() {
     if (!this.auth.isLoggedIn)
       return;
     this.syncInProgress = true;
     this.setStatus("syncing");
+    try {
+      const files = this.vault.getMarkdownFiles();
+      const changes = [];
+      for (const f of files) {
+        const content = await this.vault.read(f);
+        changes.push({ path: f.path, action: "update", content, clientMtime: f.stat.mtime });
+      }
+      if (changes.length > 0) {
+        await this.auth.request("POST", "/api/sync/push", {
+          vault: this.vaultName,
+          changes,
+          device_name: "obsidian-mac"
+        });
+      }
+      this.lastSyncTime = Date.now();
+      this.recentPushTime = Date.now();
+      this.setStatus("online");
+      new import_obsidian2.Notice(`\u2705 Pushed ${changes.length} files to cloud`);
+    } catch (e) {
+      this.setStatus("error");
+      new import_obsidian2.Notice(`Push failed: ${e.message}`);
+    } finally {
+      this.syncInProgress = false;
+    }
+  }
+  /** Pull all remote files from server (use when switching devices). */
+  async pullAll() {
+    if (!this.auth.isLoggedIn)
+      return;
+    this.syncInProgress = true;
+    this.setStatus("pulling");
     try {
       const resp = await this.auth.request("POST", "/api/sync/pull", { vault: this.vaultName, last_sync: 0 });
       const changes = resp.changes || [];
@@ -309,10 +341,10 @@ var SyncEngine = class {
         await this.applyRemoteChange(c);
       this.lastSyncTime = resp.server_time || Date.now();
       this.setStatus("online");
-      new import_obsidian2.Notice(`\u2705 Full sync \u2014 ${changes.length} files`);
+      new import_obsidian2.Notice(`\u2705 Pulled ${changes.length} files from cloud`);
     } catch (e) {
       this.setStatus("error");
-      new import_obsidian2.Notice(`Full sync failed: ${e.message}`);
+      new import_obsidian2.Notice(`Pull failed: ${e.message}`);
     } finally {
       this.syncInProgress = false;
     }
@@ -566,7 +598,7 @@ var RemoteFileTree = class extends import_obsidian5.ItemView {
     const header = root.createDiv({ cls: "cots-header" });
     header.createSpan({ text: `\u{1F4C1} ${this.vaultName}`, cls: "cots-title" });
     const btns = header.createDiv({ cls: "cots-actions" });
-    btns.createEl("button", { text: "\u{1F504} Sync", cls: "mod-cta" }).addEventListener("click", () => this.onSyncRequest());
+    btns.createEl("button", { text: "\u{1F53C} Push All", cls: "mod-cta" }).addEventListener("click", () => this.onSyncRequest());
     btns.createEl("button", { text: "\u21BB Refresh" }).addEventListener("click", () => this.render());
     const body = root.createDiv({ cls: "cots-body" });
     body.createEl("p", { text: "Loading..." });
@@ -738,14 +770,20 @@ var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
       }
       this.toggleRemoteTree();
     } });
-    this.addCommand({ id: "cloud-obsidian-sync", name: "Full Sync Now", callback: () => {
+    this.addCommand({ id: "cloud-obsidian-sync", name: "Push All to Cloud", callback: () => {
       if (this.auth.isLoggedIn) {
         this.syncEngine?.fullSync();
       } else {
         new import_obsidian7.Notice("Please login first");
       }
     } });
-    this.addCommand({ id: "cloud-obsidian-push", name: "Push Now", callback: () => this.manualPush() });
+    this.addCommand({ id: "cloud-obsidian-pull", name: "Pull All from Cloud", callback: () => {
+      if (this.auth.isLoggedIn) {
+        this.syncEngine?.pullAll();
+      } else {
+        new import_obsidian7.Notice("Please login first");
+      }
+    } });
     this.addSettingTab(new SettingsTab(this.app, this));
     if (this.auth.isLoggedIn) {
       this.ensureVaultName();
