@@ -3,6 +3,7 @@ import { AuthManager } from "./auth";
 import { SyncEngine, SyncStatus } from "./sync";
 import { FileWatcher, FileChange } from "./fileWatcher";
 import { LoginModal } from "./ui/LoginModal";
+import { RemoteFileTree } from "./ui/RemoteFileTree";
 import { SettingsTab } from "./settings";
 
 interface CloudObsidianSettings {
@@ -55,6 +56,7 @@ export default class CloudObsidianPlugin extends Plugin {
 			if (this.auth.isLoggedIn) { this.syncEngine?.fullSync(); } else { new Notice("Please login first"); }
 		}});
 		this.addCommand({ id: "cloud-obsidian-push", name: "Push Now", callback: () => this.manualPush() });
+		this.addCommand({ id: "cloud-obsidian-tree", name: "Remote File Tree", callback: () => this.openRemoteTree() });
 
 		this.addSettingTab(new SettingsTab(this.app, this));
 
@@ -98,6 +100,11 @@ export default class CloudObsidianPlugin extends Plugin {
 		this.saveSettings();
 		this.updateStatusBar("offline");
 		new Notice("Logged out");
+	}
+
+	openRemoteTree(): void {
+		if (!this.auth.isLoggedIn) { new Notice("Please login first"); return; }
+		new RemoteFileTree(this.app, this.auth, this.settings.vaultName).open();
 	}
 
 	async manualPush(): Promise<void> {

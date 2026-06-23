@@ -23,7 +23,7 @@ __export(main_exports, {
   default: () => CloudObsidianPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 
 // auth.ts
 var import_obsidian = require("obsidian");
@@ -542,9 +542,102 @@ var LoginModal = class extends import_obsidian4.Modal {
   }
 };
 
-// settings.ts
+// ui/RemoteFileTree.ts
 var import_obsidian5 = require("obsidian");
-var SettingsTab = class extends import_obsidian5.PluginSettingTab {
+var RemoteFileTree = class extends import_obsidian5.Modal {
+  constructor(app, auth, vaultName) {
+    super(app);
+    this.auth = auth;
+    this.vaultName = vaultName;
+  }
+  async onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("cloud-obsidian-tree-modal");
+    contentEl.createEl("h2", { text: `\u{1F4C1} Remote Vault: ${this.vaultName}` });
+    const loadingEl = contentEl.createEl("p", { text: "Loading..." });
+    try {
+      const resp = await this.auth.request("GET", `/api/files?vault=${encodeURIComponent(this.vaultName)}`);
+      const files = resp.files || [];
+      loadingEl.remove();
+      if (files.length === 0) {
+        contentEl.createEl("p", { text: "\u{1F4ED} \u8FDC\u7A0B\u4ED3\u5E93\u4E3A\u7A7A", cls: "cloud-obsidian-empty" });
+        return;
+      }
+      const tree = this.buildTree(files);
+      const treeEl = contentEl.createDiv({ cls: "cloud-obsidian-tree" });
+      this.renderTree(treeEl, tree, "");
+      const totalSize = files.reduce((sum, f) => sum + (f.size || 0), 0);
+      contentEl.createEl("p", {
+        text: `${files.length} files \xB7 ${this.formatSize(totalSize)}`,
+        cls: "cloud-obsidian-tree-summary"
+      });
+    } catch (e) {
+      loadingEl.textContent = `\u274C \u52A0\u8F7D\u5931\u8D25: ${e.message}`;
+    }
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+  // ---- Tree logic ----
+  buildTree(files) {
+    const root = { name: "/", children: {}, files: [] };
+    for (const f of files) {
+      const parts = f.path.split("/");
+      let node = root;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!node.children[parts[i]]) {
+          node.children[parts[i]] = { name: parts[i], children: {}, files: [] };
+        }
+        node = node.children[parts[i]];
+      }
+      const fileName = parts[parts.length - 1];
+      if (fileName) {
+        node.files.push({ name: fileName, size: f.size });
+      }
+    }
+    return root;
+  }
+  renderTree(container, node, indent) {
+    const dirs = Object.keys(node.children).sort();
+    for (const dir of dirs) {
+      const dirRow = container.createDiv({ cls: "cloud-obsidian-tree-row" });
+      dirRow.createSpan({ text: `${indent}\u{1F4C1} ${dir}/`, cls: "cloud-obsidian-tree-dir" });
+      this.renderTree(container, node.children[dir], indent + "    ");
+    }
+    const sorted = node.files.sort((a, b) => a.name.localeCompare(b.name));
+    for (const f of sorted) {
+      const fileRow = container.createDiv({ cls: "cloud-obsidian-tree-row" });
+      const icon = this.fileIcon(f.name);
+      fileRow.createSpan({ text: `${indent}${icon} ${f.name}`, cls: "cloud-obsidian-tree-file" });
+      if (f.size > 0) {
+        fileRow.createSpan({ text: this.formatSize(f.size), cls: "cloud-obsidian-tree-size" });
+      }
+    }
+  }
+  fileIcon(name) {
+    if (name.endsWith(".md"))
+      return "\u{1F4DD}";
+    if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".gif"))
+      return "\u{1F5BC}\uFE0F";
+    if (name.endsWith(".pdf"))
+      return "\u{1F4C4}";
+    if (name.endsWith(".canvas"))
+      return "\u{1F3A8}";
+    return "\u{1F4CE}";
+  }
+  formatSize(bytes) {
+    if (bytes < 1024)
+      return `${bytes} B`;
+    if (bytes < 1024 * 1024)
+      return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+};
+
+// settings.ts
+var import_obsidian6 = require("obsidian");
+var SettingsTab = class extends import_obsidian6.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -557,34 +650,34 @@ var SettingsTab = class extends import_obsidian5.PluginSettingTab {
     if (isLoggedIn) {
       containerEl.createEl("p", { text: `\u2705 Connected as ${this.plugin.auth.getUsername()}` });
       containerEl.createEl("p", { text: `\u{1F4E6} Vault: ${this.plugin.settings.vaultName}`, cls: "setting-item-description" });
-      new import_obsidian5.Setting(containerEl).setName("Server").addText((t) => t.setValue(this.plugin.settings.serverUrl).setDisabled(true));
-      new import_obsidian5.Setting(containerEl).setName("Vault Name").setDesc("Change to isolate this vault from others. Be careful \u2014 changing this disconnects from existing data.").addText((t) => {
+      new import_obsidian6.Setting(containerEl).setName("Server").addText((t) => t.setValue(this.plugin.settings.serverUrl).setDisabled(true));
+      new import_obsidian6.Setting(containerEl).setName("Vault Name").setDesc("Change to isolate this vault from others. Be careful \u2014 changing this disconnects from existing data.").addText((t) => {
         t.setValue(this.plugin.settings.vaultName).onChange(async (v) => {
           this.plugin.settings.vaultName = v || "default";
           await this.plugin.saveSettings();
         });
       });
-      new import_obsidian5.Setting(containerEl).setName("Logout").addButton((btn) => {
+      new import_obsidian6.Setting(containerEl).setName("Logout").addButton((btn) => {
         btn.setButtonText("Logout").setWarning().onClick(() => {
           this.plugin.logout();
           this.display();
         });
       });
       containerEl.createEl("h3", { text: "Sync Controls" });
-      new import_obsidian5.Setting(containerEl).setName("Full Sync").addButton((btn) => {
+      new import_obsidian6.Setting(containerEl).setName("Full Sync").addButton((btn) => {
         btn.setButtonText("Full Sync").setCta().onClick(() => this.plugin.syncEngine?.fullSync());
       });
-      new import_obsidian5.Setting(containerEl).setName("Push Now").addButton((btn) => {
+      new import_obsidian6.Setting(containerEl).setName("Push Now").addButton((btn) => {
         btn.setButtonText("Push Now").onClick(() => this.plugin.manualPush());
       });
     } else {
-      new import_obsidian5.Setting(containerEl).setName("Server URL").addText((t) => {
+      new import_obsidian6.Setting(containerEl).setName("Server URL").addText((t) => {
         t.setPlaceholder("http://your-server:9090").setValue(this.plugin.settings.serverUrl).onChange(async (v) => {
           this.plugin.settings.serverUrl = v;
           await this.plugin.saveSettings();
         });
       });
-      new import_obsidian5.Setting(containerEl).setName("Open Login").addButton((btn) => {
+      new import_obsidian6.Setting(containerEl).setName("Open Login").addButton((btn) => {
         btn.setButtonText("Open Login").setCta().onClick(() => this.plugin.openLoginModal());
       });
     }
@@ -596,7 +689,7 @@ var DEFAULT_SETTINGS = {
   serverUrl: "http://127.0.0.1:9090",
   vaultName: ""
 };
-var CloudObsidianPlugin = class extends import_obsidian6.Plugin {
+var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
   async onload() {
     await this.loadSettings();
     this.auth = new AuthManager(this.settings.serverUrl);
@@ -605,7 +698,7 @@ var CloudObsidianPlugin = class extends import_obsidian6.Plugin {
       this.auth.username = this.settings.username;
       this.auth.userId = this.settings.userId;
     }
-    (0, import_obsidian6.addIcon)("cloud-obsidian-sync", `
+    (0, import_obsidian7.addIcon)("cloud-obsidian-sync", `
 			<circle cx="50" cy="50" r="30" fill="none" stroke="currentColor" stroke-width="8"/>
 			<path d="M30 50 L50 30 L70 50" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
 			<path d="M50 70 L50 30" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
@@ -625,10 +718,11 @@ var CloudObsidianPlugin = class extends import_obsidian6.Plugin {
       if (this.auth.isLoggedIn) {
         this.syncEngine?.fullSync();
       } else {
-        new import_obsidian6.Notice("Please login first");
+        new import_obsidian7.Notice("Please login first");
       }
     } });
     this.addCommand({ id: "cloud-obsidian-push", name: "Push Now", callback: () => this.manualPush() });
+    this.addCommand({ id: "cloud-obsidian-tree", name: "Remote File Tree", callback: () => this.openRemoteTree() });
     this.addSettingTab(new SettingsTab(this.app, this));
     if (this.auth.isLoggedIn) {
       this.ensureVaultName();
@@ -650,10 +744,10 @@ var CloudObsidianPlugin = class extends import_obsidian6.Plugin {
         this.settings.userId = this.auth.getUserId();
         this.ensureVaultName();
         await this.saveSettings();
-        new import_obsidian6.Notice(`\u2705 Connected as ${username} [${this.settings.vaultName}]`);
+        new import_obsidian7.Notice(`\u2705 Connected as ${username} [${this.settings.vaultName}]`);
         this.startSyncEngine();
       } else {
-        new import_obsidian6.Notice(`\u274C ${result.error || "Authentication failed"}`);
+        new import_obsidian7.Notice(`\u274C ${result.error || "Authentication failed"}`);
       }
     });
     modal.open();
@@ -666,11 +760,18 @@ var CloudObsidianPlugin = class extends import_obsidian6.Plugin {
     this.settings.userId = void 0;
     this.saveSettings();
     this.updateStatusBar("offline");
-    new import_obsidian6.Notice("Logged out");
+    new import_obsidian7.Notice("Logged out");
+  }
+  openRemoteTree() {
+    if (!this.auth.isLoggedIn) {
+      new import_obsidian7.Notice("Please login first");
+      return;
+    }
+    new RemoteFileTree(this.app, this.auth, this.settings.vaultName).open();
   }
   async manualPush() {
     if (!this.auth.isLoggedIn) {
-      new import_obsidian6.Notice("Please login first");
+      new import_obsidian7.Notice("Please login first");
       return;
     }
     const files = this.app.vault.getMarkdownFiles();
@@ -681,7 +782,7 @@ var CloudObsidianPlugin = class extends import_obsidian6.Plugin {
     }
     if (changes.length > 0) {
       await this.syncEngine?.push(changes);
-      new import_obsidian6.Notice(`Pushed ${changes.length} files`);
+      new import_obsidian7.Notice(`Pushed ${changes.length} files`);
     }
   }
   async saveSettings() {
