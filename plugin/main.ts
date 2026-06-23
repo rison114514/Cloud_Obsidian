@@ -114,12 +114,13 @@ export default class CloudObsidianPlugin extends Plugin {
 	async saveSettings(): Promise<void> { await this.saveData(this.settings); }
 	async loadSettings(): Promise<void> { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); }
 
-	/** Derive vault name from vault directory basename. */
+	/** Derive vault name from Obsidian's official API. */
 	private ensureVaultName(): void {
 		if (!this.settings.vaultName) {
-			const vaultRoot = (this.app.vault as any).adapter?.basePath || "";
-			const name = vaultRoot.split("/").pop() || vaultRoot.split("\\").pop() || "default";
-			this.settings.vaultName = name.replace(/\s+/g, "_");
+			// Obsidian official API: returns the vault directory basename
+			const name = this.app.vault.getName();
+			this.settings.vaultName = name.replace(/\s+/g, "_") || "default";
+			console.log("[Cloud-Obsidian] Detected vault name:", this.settings.vaultName);
 		}
 	}
 

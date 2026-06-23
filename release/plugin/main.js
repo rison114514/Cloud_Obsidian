@@ -690,12 +690,12 @@ var CloudObsidianPlugin = class extends import_obsidian6.Plugin {
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
-  /** Derive vault name from vault directory basename. */
+  /** Derive vault name from Obsidian's official API. */
   ensureVaultName() {
     if (!this.settings.vaultName) {
-      const vaultRoot = this.app.vault.adapter?.basePath || "";
-      const name = vaultRoot.split("/").pop() || vaultRoot.split("\\").pop() || "default";
-      this.settings.vaultName = name.replace(/\s+/g, "_");
+      const name = this.app.vault.getName();
+      this.settings.vaultName = name.replace(/\s+/g, "_") || "default";
+      console.log("[Cloud-Obsidian] Detected vault name:", this.settings.vaultName);
     }
   }
   startSyncEngine() {
