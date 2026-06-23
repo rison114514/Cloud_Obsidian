@@ -23,7 +23,7 @@ export class FileWatcher {
 	private pending: Map<string, FileChange> = new Map();
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	private debounceMs: number;
-	private ignorePaths: Set<string> = new Set([".obsidian/", ".git/", ".trash/", ".DS_Store", ".index/", ".tmp/", "node_modules/", ".gitignore"]);
+	private ignorePaths: Set<string> = new Set([".obsidian/", ".git/", ".trash/", ".DS_Store", ".index/", ".tmp/", "node_modules/", ".gitignore", "package-lock.json", ".eslintrc", "tsconfig.json"]);
 	private ignoreNext: Set<string> = new Set();
 
 	// Store callbacks for vault.off cleanup.
