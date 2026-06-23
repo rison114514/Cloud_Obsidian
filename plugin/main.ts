@@ -168,7 +168,7 @@ export default class CloudObsidianPlugin extends Plugin {
 		this.fileWatcher.start();
 		this.syncEngine.setFileWatcher(this.fileWatcher);
 		this.syncEngine.start();
-		this.syncEngine.fullSync();
+		// No auto fullSync — local is source of truth, cloud follows local.
 	}
 
 	private stopSyncEngine(): void {

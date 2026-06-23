@@ -224,10 +224,6 @@ var SyncEngine = class {
   start() {
     if (this.auth.isLoggedIn)
       this.connectWS();
-    this.pullInterval = setInterval(() => {
-      if (this.auth.isLoggedIn && !this.syncInProgress)
-        this.pull();
-    }, 6e4);
   }
   connectWS() {
     if (this.ws)
@@ -351,10 +347,6 @@ var SyncEngine = class {
     }
   }
   stop() {
-    if (this.pullInterval) {
-      clearInterval(this.pullInterval);
-      this.pullInterval = null;
-    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -849,7 +841,6 @@ var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
     this.fileWatcher.start();
     this.syncEngine.setFileWatcher(this.fileWatcher);
     this.syncEngine.start();
-    this.syncEngine.fullSync();
   }
   stopSyncEngine() {
     if (this.fileWatcher) {

@@ -30,10 +30,9 @@ export class SyncEngine {
 	setFileWatcher(fw: FileWatcher): void { this.fileWatcher = fw; }
 
 	start(): void {
+		// Connect WebSocket to receive push notifications from other devices.
+		// No periodic pull — local is the source of truth, cloud follows local.
 		if (this.auth.isLoggedIn) this.connectWS();
-		this.pullInterval = setInterval(() => {
-			if (this.auth.isLoggedIn && !this.syncInProgress) this.pull();
-		}, 60_000);
 	}
 
 	connectWS(): void {
@@ -138,7 +137,6 @@ export class SyncEngine {
 	}
 
 	stop(): void {
-		if (this.pullInterval) { clearInterval(this.pullInterval); this.pullInterval = null; }
 		if (this.ws) { this.ws.close(); this.ws = null; }
 	}
 
