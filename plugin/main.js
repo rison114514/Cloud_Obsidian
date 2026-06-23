@@ -562,101 +562,92 @@ var RemoteFileTree = class extends import_obsidian5.ItemView {
     return "cloud-obsidian-sync";
   }
   async onOpen() {
-    this.contentEl = this.containerEl.children[1];
-    this.contentEl.empty();
-    this.contentEl.addClass("cloud-obsidian-tree-panel");
-    this.render();
-  }
-  async onClose() {
-    this.contentEl.empty();
+    await this.render();
   }
   refresh() {
     this.render();
   }
   async render() {
-    const root = this.contentEl;
+    const root = this.containerEl.children[1];
     root.empty();
-    const header = root.createDiv({ cls: "cloud-obsidian-tree-header" });
-    header.createSpan({ text: `\u{1F4C1} ${this.vaultName}`, cls: "cloud-obsidian-tree-title" });
-    const btnRow = header.createDiv({ cls: "cloud-obsidian-tree-actions" });
-    const syncBtn = btnRow.createEl("button", { text: "\u{1F504} Sync", cls: "mod-cta" });
-    syncBtn.addEventListener("click", () => this.onSyncRequest());
-    const refreshBtn = btnRow.createEl("button", { text: "\u21BB Refresh" });
-    refreshBtn.addEventListener("click", () => this.render());
-    const body = root.createDiv({ cls: "cloud-obsidian-tree-body" });
-    body.createEl("p", { text: "Loading...", cls: "cloud-obsidian-loading" });
+    root.addClass("cloud-obsidian-tree-panel");
+    const header = root.createDiv({ cls: "cots-header" });
+    header.createSpan({ text: `\u{1F4C1} ${this.vaultName}`, cls: "cots-title" });
+    const btns = header.createDiv({ cls: "cots-actions" });
+    btns.createEl("button", { text: "\u{1F504} Sync", cls: "mod-cta" }).addEventListener("click", () => this.onSyncRequest());
+    btns.createEl("button", { text: "\u21BB Refresh" }).addEventListener("click", () => this.render());
+    const body = root.createDiv({ cls: "cots-body" });
+    body.createEl("p", { text: "Loading..." });
     try {
       const resp = await this.auth.request("GET", `/api/files?vault=${encodeURIComponent(this.vaultName)}`);
       const files = resp.files || [];
       body.empty();
       if (files.length === 0) {
-        body.createEl("p", { text: "\u{1F4ED} Remote vault is empty", cls: "cloud-obsidian-empty" });
+        body.createEl("p", { text: "\u{1F4ED} Remote vault is empty", cls: "cots-empty" });
         return;
       }
-      const tree = this.buildTree(files);
-      const treeEl = body.createDiv({ cls: "cloud-obsidian-tree" });
-      this.renderTree(treeEl, tree, "");
-      const totalSize = files.reduce((sum, f) => sum + (f.size || 0), 0);
-      body.createEl("div", {
-        text: `${files.length} files \xB7 ${this.formatSize(totalSize)}`,
-        cls: "cloud-obsidian-tree-summary"
-      });
+      const tree = buildTree(files);
+      body.createDiv({ cls: "cots-tree" });
+      renderTree(body, tree, 0);
+      const totalSize = files.reduce((s, f) => s + (f.size || 0), 0);
+      body.createDiv({ text: `${files.length} files \xB7 ${fmtSize(totalSize)}`, cls: "cots-summary" });
     } catch (e) {
       body.empty();
-      body.createEl("p", { text: `\u274C ${e.message}`, cls: "cloud-obsidian-error" });
+      body.createEl("p", { text: `\u274C ${e.message}`, cls: "cots-error" });
     }
-  }
-  // ---- Tree logic ----
-  buildTree(files) {
-    const root = { name: "/", children: {}, files: [] };
-    for (const f of files) {
-      const parts = f.path.split("/");
-      let node = root;
-      for (let i = 0; i < parts.length - 1; i++) {
-        if (!node.children[parts[i]]) {
-          node.children[parts[i]] = { name: parts[i], children: {}, files: [] };
-        }
-        node = node.children[parts[i]];
-      }
-      const fileName = parts[parts.length - 1];
-      if (fileName)
-        node.files.push({ name: fileName, size: f.size });
-    }
-    return root;
-  }
-  renderTree(container, node, indent) {
-    const dirs = Object.keys(node.children).sort();
-    for (const dir of dirs) {
-      const row = container.createDiv({ cls: "cots-tree-row" });
-      row.createSpan({ text: `${indent}\u{1F4C1} ${dir}/`, cls: "cots-tree-dir" });
-      this.renderTree(container, node.children[dir], indent + "    ");
-    }
-    for (const f of node.files.sort((a, b) => a.name.localeCompare(b.name))) {
-      const row = container.createDiv({ cls: "cots-tree-row" });
-      row.createSpan({ text: `${indent}${this.fileIcon(f.name)} ${f.name}`, cls: "cots-tree-file" });
-      if (f.size > 0)
-        row.createSpan({ text: this.formatSize(f.size), cls: "cots-tree-size" });
-    }
-  }
-  fileIcon(name) {
-    if (name.endsWith(".md"))
-      return "\u{1F4DD}";
-    if (name.match(/\.(png|jpg|gif|svg|webp)$/i))
-      return "\u{1F5BC}\uFE0F";
-    if (name.endsWith(".pdf"))
-      return "\u{1F4C4}";
-    if (name.endsWith(".canvas"))
-      return "\u{1F3A8}";
-    return "\u{1F4CE}";
-  }
-  formatSize(bytes) {
-    if (bytes < 1024)
-      return `${bytes} B`;
-    if (bytes < 1024 * 1024)
-      return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 };
+function buildTree(files) {
+  const root = { name: "/", children: {}, files: [] };
+  for (const f of files) {
+    const parts = f.path.split("/");
+    let node = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!node.children[parts[i]])
+        node.children[parts[i]] = { name: parts[i], children: {}, files: [] };
+      node = node.children[parts[i]];
+    }
+    const fn = parts[parts.length - 1];
+    if (fn)
+      node.files.push({ name: fn, size: f.size });
+  }
+  return root;
+}
+function renderTree(container, node, depth) {
+  const dirs = Object.keys(node.children).sort();
+  for (const dir of dirs) {
+    const row = container.createDiv({ cls: "cots-row" });
+    row.style.paddingLeft = `${depth * 16}px`;
+    row.createSpan({ text: `\u{1F4C1} ${dir}/`, cls: "cots-dir" });
+    renderTree(container, node.children[dir], depth + 1);
+  }
+  const fileList = node.files.sort((a, b) => a.name.localeCompare(b.name));
+  for (const f of fileList) {
+    const row = container.createDiv({ cls: "cots-row" });
+    row.style.paddingLeft = `${depth * 16}px`;
+    row.createSpan({ text: `${fileIcon(f.name)} ${f.name}`, cls: "cots-file" });
+    if (f.size > 0)
+      row.createSpan({ text: fmtSize(f.size), cls: "cots-size" });
+  }
+}
+function fileIcon(name) {
+  if (name.endsWith(".md"))
+    return "\u{1F4DD}";
+  if (name.match(/\.(png|jpg|gif|svg|webp)$/i))
+    return "\u{1F5BC}\uFE0F";
+  if (name.endsWith(".pdf"))
+    return "\u{1F4C4}";
+  if (name.endsWith(".canvas"))
+    return "\u{1F3A8}";
+  return "\u{1F4CE}";
+}
+function fmtSize(bytes) {
+  if (bytes < 1024)
+    return `${bytes} B`;
+  if (bytes < 1024 * 1024)
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // settings.ts
 var import_obsidian6 = require("obsidian");
