@@ -37,12 +37,6 @@ export default class CloudObsidianPlugin extends Plugin {
 			(this.auth as any).userId = this.settings.userId;
 		}
 
-		addIcon("cloud-obsidian-sync", `
-			<circle cx="50" cy="50" r="30" fill="none" stroke="currentColor" stroke-width="8"/>
-			<path d="M30 50 L50 30 L70 50" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-			<path d="M50 70 L50 30" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
-		`);
-
 		// ---- Status bar ----
 		this.statusBarEl = this.addStatusBarItem();
 		this.statusBarEl.addClass("cloud-obsidian-status");
@@ -60,6 +54,7 @@ export default class CloudObsidianPlugin extends Plugin {
 		);
 
 		// ---- Ribbon: toggle remote tree ----
+		addIcon("cloud-obsidian-sync", `<path fill="currentColor" d="M68 50c0-12-9-22-20-24-2-14-14-25-28-25-10 0-19 5-24 13-11 1-20 10-20 22 0 2 1 4 2 6-2 0-4 0-5 1-9 3-15 12-15 21 0 13 10 24 22 24h88c12 0 22-9 22-22 0-11-8-20-18-22-1-2-2-4-4-6z M45 55v-20l-10 10-4-4 16-16 16 16-4 4-10-10v20z"/>`);
 		this.addRibbonIcon("cloud-obsidian-sync", "Cloud Obsidian Sync", () => {
 			if (!this.auth.isLoggedIn) { this.openLoginModal(); return; }
 			this.ensureVaultName();

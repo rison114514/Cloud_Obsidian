@@ -113,12 +113,12 @@ export class RemoteFileTree extends ItemView {
 		}
 		for (const f of node.files.sort((a, b) => a.name.localeCompare(b.name))) {
 			const row = container.createDiv({ cls: "cots-tree-row" });
-			row.createSpan({ text: `${indent}${this.icon(f.name)} ${f.name}`, cls: "cots-tree-file" });
+			row.createSpan({ text: `${indent}${this.fileIcon(f.name)} ${f.name}`, cls: "cots-tree-file" });
 			if (f.size > 0) row.createSpan({ text: this.formatSize(f.size), cls: "cots-tree-size" });
 		}
 	}
 
-	private icon(name: string): string {
+	private fileIcon(name: string): string {
 		if (name.endsWith(".md")) return "📝";
 		if (name.match(/\.(png|jpg|gif|svg|webp)$/i)) return "🖼️";
 		if (name.endsWith(".pdf")) return "📄";
