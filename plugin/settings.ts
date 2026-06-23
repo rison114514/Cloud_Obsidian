@@ -1,9 +1,6 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import type CloudObsidianPlugin from "./main";
 
-/**
- * SettingsTab provides the plugin configuration UI in Obsidian's settings.
- */
 export class SettingsTab extends PluginSettingTab {
 	plugin: CloudObsidianPlugin;
 
@@ -15,101 +12,45 @@ export class SettingsTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-
 		containerEl.createEl("h2", { text: "Cloud Obsidian Sync" });
 
-		// Connection status
-		const statusSection = containerEl.createDiv({ cls: "cloud-obsidian-status-section" });
 		const isLoggedIn = this.plugin.auth.isLoggedIn;
-		statusSection.createEl("p", {
-			text: isLoggedIn
-				? `✅ Connected as ${this.plugin.auth.getUsername()}`
-				: "❌ Not connected",
-		});
 
 		if (isLoggedIn) {
-			new Setting(containerEl)
-				.setName("Server")
-				.setDesc("Your sync server URL")
-				.addText((text) => {
-					text.setValue(this.plugin.settings.serverUrl)
-						.setDisabled(true);
-				});
+			containerEl.createEl("p", { text: `✅ Connected as ${this.plugin.auth.getUsername()}` });
+			containerEl.createEl("p", { text: `📦 Vault: ${this.plugin.settings.vaultName}`, cls: "setting-item-description" });
 
-			new Setting(containerEl)
-				.setName("Username")
-				.setDesc("Logged in account")
-				.addText((text) => {
-					text.setValue(this.plugin.auth.getUsername() || "")
-						.setDisabled(true);
-				});
-
-			// Logout button
-			new Setting(containerEl)
-				.setName("Logout")
-				.setDesc("Disconnect from the sync server")
-				.addButton((btn) => {
-					btn.setButtonText("Logout")
-						.setWarning()
-						.onClick(() => {
-							this.plugin.logout();
-							this.display(); // Refresh settings panel.
-						});
-				});
-
-			// Sync controls
-			containerEl.createEl("h3", { text: "Sync Controls" });
-
-			new Setting(containerEl)
-				.setName("Full Sync")
-				.setDesc("Pull all remote files to this vault (use after first login or on a new device)")
-				.addButton((btn) => {
-					btn.setButtonText("Full Sync")
-						.setCta()
-						.onClick(() => {
-							this.plugin.syncEngine?.fullSync();
-						});
-				});
-
-			new Setting(containerEl)
-				.setName("Push Now")
-				.setDesc("Force push all local changes immediately")
-				.addButton((btn) => {
-					btn.setButtonText("Push Now")
-						.onClick(() => {
-							this.plugin.manualPush();
-						});
-				});
-		} else {
-			// Login prompt
-			new Setting(containerEl)
-				.setName("Server URL")
-				.setDesc("Your Cloud-Obsidian server address")
-				.addText((text) => {
-					text.setPlaceholder("http://your-server:9090")
-						.setValue(this.plugin.settings.serverUrl)
-						.onChange(async (value) => {
-							this.plugin.settings.serverUrl = value;
+			new Setting(containerEl).setName("Server").addText(t => t.setValue(this.plugin.settings.serverUrl).setDisabled(true));
+			new Setting(containerEl).setName("Vault Name")
+				.setDesc("Change to isolate this vault from others. Be careful — changing this disconnects from existing data.")
+				.addText(t => {
+					t.setValue(this.plugin.settings.vaultName)
+						.onChange(async (v) => {
+							this.plugin.settings.vaultName = v || "default";
 							await this.plugin.saveSettings();
 						});
 				});
 
-			const loginContainer = containerEl.createDiv({ cls: "cloud-obsidian-login-area" });
-			loginContainer.createEl("p", {
-				text: "Click the ribbon icon or use the command palette to open the login dialog.",
-				cls: "setting-item-description",
+			new Setting(containerEl).setName("Logout").addButton(btn => {
+				btn.setButtonText("Logout").setWarning().onClick(() => { this.plugin.logout(); this.display(); });
 			});
 
-			new Setting(containerEl)
-				.setName("Open Login")
-				.setDesc("Open the login / register dialog")
-				.addButton((btn) => {
-					btn.setButtonText("Open Login")
-						.setCta()
-						.onClick(() => {
-							this.plugin.openLoginModal();
-						});
-				});
+			containerEl.createEl("h3", { text: "Sync Controls" });
+			new Setting(containerEl).setName("Full Sync").addButton(btn => {
+				btn.setButtonText("Full Sync").setCta().onClick(() => this.plugin.syncEngine?.fullSync());
+			});
+			new Setting(containerEl).setName("Push Now").addButton(btn => {
+				btn.setButtonText("Push Now").onClick(() => this.plugin.manualPush());
+			});
+		} else {
+			new Setting(containerEl).setName("Server URL").addText(t => {
+				t.setPlaceholder("http://your-server:9090")
+					.setValue(this.plugin.settings.serverUrl)
+					.onChange(async (v) => { this.plugin.settings.serverUrl = v; await this.plugin.saveSettings(); });
+			});
+			new Setting(containerEl).setName("Open Login").addButton(btn => {
+				btn.setButtonText("Open Login").setCta().onClick(() => this.plugin.openLoginModal());
+			});
 		}
 	}
 }
