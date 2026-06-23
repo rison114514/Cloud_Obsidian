@@ -544,40 +544,67 @@ var LoginModal = class extends import_obsidian4.Modal {
 
 // ui/RemoteFileTree.ts
 var import_obsidian5 = require("obsidian");
-var RemoteFileTree = class extends import_obsidian5.Modal {
-  constructor(app, auth, vaultName) {
-    super(app);
+var REMOTE_TREE_VIEW_TYPE = "cloud-obsidian-remote-tree";
+var RemoteFileTree = class extends import_obsidian5.ItemView {
+  constructor(leaf, auth, vaultName, onSyncRequest) {
+    super(leaf);
     this.auth = auth;
     this.vaultName = vaultName;
+    this.onSyncRequest = onSyncRequest;
+  }
+  getViewType() {
+    return REMOTE_TREE_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return `Remote: ${this.vaultName}`;
+  }
+  getIcon() {
+    return "cloud-obsidian-sync";
   }
   async onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("cloud-obsidian-tree-modal");
-    contentEl.createEl("h2", { text: `\u{1F4C1} Remote Vault: ${this.vaultName}` });
-    const loadingEl = contentEl.createEl("p", { text: "Loading..." });
+    this.contentEl = this.containerEl.children[1];
+    this.contentEl.empty();
+    this.contentEl.addClass("cloud-obsidian-tree-panel");
+    this.render();
+  }
+  async onClose() {
+    this.contentEl.empty();
+  }
+  refresh() {
+    this.render();
+  }
+  async render() {
+    const root = this.contentEl;
+    root.empty();
+    const header = root.createDiv({ cls: "cloud-obsidian-tree-header" });
+    header.createSpan({ text: `\u{1F4C1} ${this.vaultName}`, cls: "cloud-obsidian-tree-title" });
+    const btnRow = header.createDiv({ cls: "cloud-obsidian-tree-actions" });
+    const syncBtn = btnRow.createEl("button", { text: "\u{1F504} Sync", cls: "mod-cta" });
+    syncBtn.addEventListener("click", () => this.onSyncRequest());
+    const refreshBtn = btnRow.createEl("button", { text: "\u21BB Refresh" });
+    refreshBtn.addEventListener("click", () => this.render());
+    const body = root.createDiv({ cls: "cloud-obsidian-tree-body" });
+    body.createEl("p", { text: "Loading...", cls: "cloud-obsidian-loading" });
     try {
       const resp = await this.auth.request("GET", `/api/files?vault=${encodeURIComponent(this.vaultName)}`);
       const files = resp.files || [];
-      loadingEl.remove();
+      body.empty();
       if (files.length === 0) {
-        contentEl.createEl("p", { text: "\u{1F4ED} \u8FDC\u7A0B\u4ED3\u5E93\u4E3A\u7A7A", cls: "cloud-obsidian-empty" });
+        body.createEl("p", { text: "\u{1F4ED} Remote vault is empty", cls: "cloud-obsidian-empty" });
         return;
       }
       const tree = this.buildTree(files);
-      const treeEl = contentEl.createDiv({ cls: "cloud-obsidian-tree" });
+      const treeEl = body.createDiv({ cls: "cloud-obsidian-tree" });
       this.renderTree(treeEl, tree, "");
       const totalSize = files.reduce((sum, f) => sum + (f.size || 0), 0);
-      contentEl.createEl("p", {
+      body.createEl("div", {
         text: `${files.length} files \xB7 ${this.formatSize(totalSize)}`,
         cls: "cloud-obsidian-tree-summary"
       });
     } catch (e) {
-      loadingEl.textContent = `\u274C \u52A0\u8F7D\u5931\u8D25: ${e.message}`;
+      body.empty();
+      body.createEl("p", { text: `\u274C ${e.message}`, cls: "cloud-obsidian-error" });
     }
-  }
-  onClose() {
-    this.contentEl.empty();
   }
   // ---- Tree logic ----
   buildTree(files) {
@@ -592,33 +619,29 @@ var RemoteFileTree = class extends import_obsidian5.Modal {
         node = node.children[parts[i]];
       }
       const fileName = parts[parts.length - 1];
-      if (fileName) {
+      if (fileName)
         node.files.push({ name: fileName, size: f.size });
-      }
     }
     return root;
   }
   renderTree(container, node, indent) {
     const dirs = Object.keys(node.children).sort();
     for (const dir of dirs) {
-      const dirRow = container.createDiv({ cls: "cloud-obsidian-tree-row" });
-      dirRow.createSpan({ text: `${indent}\u{1F4C1} ${dir}/`, cls: "cloud-obsidian-tree-dir" });
+      const row = container.createDiv({ cls: "cots-tree-row" });
+      row.createSpan({ text: `${indent}\u{1F4C1} ${dir}/`, cls: "cots-tree-dir" });
       this.renderTree(container, node.children[dir], indent + "    ");
     }
-    const sorted = node.files.sort((a, b) => a.name.localeCompare(b.name));
-    for (const f of sorted) {
-      const fileRow = container.createDiv({ cls: "cloud-obsidian-tree-row" });
-      const icon = this.fileIcon(f.name);
-      fileRow.createSpan({ text: `${indent}${icon} ${f.name}`, cls: "cloud-obsidian-tree-file" });
-      if (f.size > 0) {
-        fileRow.createSpan({ text: this.formatSize(f.size), cls: "cloud-obsidian-tree-size" });
-      }
+    for (const f of node.files.sort((a, b) => a.name.localeCompare(b.name))) {
+      const row = container.createDiv({ cls: "cots-tree-row" });
+      row.createSpan({ text: `${indent}${this.icon(f.name)} ${f.name}`, cls: "cots-tree-file" });
+      if (f.size > 0)
+        row.createSpan({ text: this.formatSize(f.size), cls: "cots-tree-size" });
     }
   }
-  fileIcon(name) {
+  icon(name) {
     if (name.endsWith(".md"))
       return "\u{1F4DD}";
-    if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".gif"))
+    if (name.match(/\.(png|jpg|gif|svg|webp)$/i))
       return "\u{1F5BC}\uFE0F";
     if (name.endsWith(".pdf"))
       return "\u{1F4C4}";
@@ -690,6 +713,10 @@ var DEFAULT_SETTINGS = {
   vaultName: ""
 };
 var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
+  constructor() {
+    super(...arguments);
+    this.treeView = null;
+  }
   async onload() {
     await this.loadSettings();
     this.auth = new AuthManager(this.settings.serverUrl);
@@ -706,15 +733,33 @@ var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
     this.statusBarEl = this.addStatusBarItem();
     this.statusBarEl.addClass("cloud-obsidian-status");
     this.updateStatusBar("offline");
-    this.addRibbonIcon("cloud-obsidian-sync", "Cloud Obsidian Sync", () => {
-      if (this.auth.isLoggedIn) {
-        this.syncEngine?.fullSync();
-      } else {
-        this.openLoginModal();
+    this.registerView(
+      REMOTE_TREE_VIEW_TYPE,
+      (leaf) => {
+        this.treeView = new RemoteFileTree(leaf, this.auth, this.settings.vaultName || "default", () => {
+          if (this.auth.isLoggedIn)
+            this.syncEngine?.fullSync();
+        });
+        return this.treeView;
       }
+    );
+    this.addRibbonIcon("cloud-obsidian-sync", "Cloud Obsidian Sync", () => {
+      if (!this.auth.isLoggedIn) {
+        this.openLoginModal();
+        return;
+      }
+      this.ensureVaultName();
+      this.toggleRemoteTree();
     });
     this.addCommand({ id: "cloud-obsidian-login", name: "Login / Register", callback: () => this.openLoginModal() });
-    this.addCommand({ id: "cloud-obsidian-full-sync", name: "Full Sync", callback: () => {
+    this.addCommand({ id: "cloud-obsidian-tree", name: "Toggle Remote File Tree", callback: () => {
+      if (!this.auth.isLoggedIn) {
+        new import_obsidian7.Notice("Please login first");
+        return;
+      }
+      this.toggleRemoteTree();
+    } });
+    this.addCommand({ id: "cloud-obsidian-sync", name: "Full Sync Now", callback: () => {
       if (this.auth.isLoggedIn) {
         this.syncEngine?.fullSync();
       } else {
@@ -722,7 +767,6 @@ var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
       }
     } });
     this.addCommand({ id: "cloud-obsidian-push", name: "Push Now", callback: () => this.manualPush() });
-    this.addCommand({ id: "cloud-obsidian-tree", name: "Remote File Tree", callback: () => this.openRemoteTree() });
     this.addSettingTab(new SettingsTab(this.app, this));
     if (this.auth.isLoggedIn) {
       this.ensureVaultName();
@@ -732,7 +776,25 @@ var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
   }
   onunload() {
     this.stopSyncEngine();
+    this.app.workspace.detachLeavesOfType(REMOTE_TREE_VIEW_TYPE);
   }
+  // ---- Remote Tree View ----
+  async toggleRemoteTree() {
+    const existing = this.app.workspace.getLeavesOfType(REMOTE_TREE_VIEW_TYPE);
+    if (existing.length > 0) {
+      existing[0].detach();
+      return;
+    }
+    await this.app.workspace.getRightLeaf(false)?.setViewState({
+      type: REMOTE_TREE_VIEW_TYPE,
+      active: true
+    });
+    this.app.workspace.revealLeaf(
+      this.app.workspace.getLeavesOfType(REMOTE_TREE_VIEW_TYPE)[0]
+    );
+    setTimeout(() => this.treeView?.refresh(), 300);
+  }
+  // ---- Login ----
   openLoginModal() {
     const modal = new LoginModal(this.app, this.settings.serverUrl, async (username, password, serverUrl, isRegister) => {
       this.settings.serverUrl = serverUrl;
@@ -754,6 +816,7 @@ var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
   }
   logout() {
     this.stopSyncEngine();
+    this.app.workspace.detachLeavesOfType(REMOTE_TREE_VIEW_TYPE);
     this.auth.logout();
     this.settings.token = void 0;
     this.settings.username = void 0;
@@ -762,13 +825,6 @@ var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
     this.updateStatusBar("offline");
     new import_obsidian7.Notice("Logged out");
   }
-  openRemoteTree() {
-    if (!this.auth.isLoggedIn) {
-      new import_obsidian7.Notice("Please login first");
-      return;
-    }
-    new RemoteFileTree(this.app, this.auth, this.settings.vaultName).open();
-  }
   async manualPush() {
     if (!this.auth.isLoggedIn) {
       new import_obsidian7.Notice("Please login first");
@@ -776,10 +832,8 @@ var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
     }
     const files = this.app.vault.getMarkdownFiles();
     const changes = [];
-    for (const f of files) {
-      const content = await this.app.vault.read(f);
-      changes.push({ path: f.path, action: "update", content, clientMtime: f.stat.mtime });
-    }
+    for (const f of files)
+      changes.push({ path: f.path, action: "update", content: await this.app.vault.read(f), clientMtime: f.stat.mtime });
     if (changes.length > 0) {
       await this.syncEngine?.push(changes);
       new import_obsidian7.Notice(`Pushed ${changes.length} files`);
@@ -791,26 +845,19 @@ var CloudObsidianPlugin = class extends import_obsidian7.Plugin {
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
-  /** Derive vault name from Obsidian's official API. */
   ensureVaultName() {
     if (!this.settings.vaultName) {
-      const name = this.app.vault.getName();
-      this.settings.vaultName = name.replace(/\s+/g, "_") || "default";
-      console.log("[Cloud-Obsidian] Detected vault name:", this.settings.vaultName);
+      this.settings.vaultName = this.app.vault.getName().replace(/\s+/g, "_") || "default";
     }
   }
+  // ---- Sync Engine ----
   startSyncEngine() {
     this.stopSyncEngine();
     this.ensureVaultName();
-    this.syncEngine = new SyncEngine(
-      this.app.vault,
-      this.auth,
-      this.settings.vaultName,
-      (status) => this.updateStatusBar(status)
-    );
-    this.fileWatcher = new FileWatcher(this.app.vault, (changes) => {
+    this.syncEngine = new SyncEngine(this.app.vault, this.auth, this.settings.vaultName, (s) => this.updateStatusBar(s));
+    this.fileWatcher = new FileWatcher(this.app.vault, (c) => {
       if (this.syncEngine)
-        this.syncEngine.push(changes);
+        this.syncEngine.push(c);
     });
     this.fileWatcher.start();
     this.syncEngine.setFileWatcher(this.fileWatcher);

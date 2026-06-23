@@ -3,7 +3,7 @@ import { AuthManager } from "./auth";
 import { SyncEngine, SyncStatus } from "./sync";
 import { FileWatcher, FileChange } from "./fileWatcher";
 import { LoginModal } from "./ui/LoginModal";
-import { RemoteFileTree } from "./ui/RemoteFileTree";
+import { RemoteFileTree, REMOTE_TREE_VIEW_TYPE } from "./ui/RemoteFileTree";
 import { SettingsTab } from "./settings";
 
 interface CloudObsidianSettings {
@@ -25,6 +25,7 @@ export default class CloudObsidianPlugin extends Plugin {
 	syncEngine!: SyncEngine | null;
 	private fileWatcher!: FileWatcher | null;
 	private statusBarEl!: HTMLElement;
+	private treeView: RemoteFileTree | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -42,21 +43,39 @@ export default class CloudObsidianPlugin extends Plugin {
 			<path d="M50 70 L50 30" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
 		`);
 
+		// ---- Status bar ----
 		this.statusBarEl = this.addStatusBarItem();
 		this.statusBarEl.addClass("cloud-obsidian-status");
 		this.updateStatusBar("offline");
 
+		// ---- Register sidebar view ----
+		this.registerView(
+			REMOTE_TREE_VIEW_TYPE,
+			(leaf) => {
+				this.treeView = new RemoteFileTree(leaf, this.auth, this.settings.vaultName || "default", () => {
+					if (this.auth.isLoggedIn) this.syncEngine?.fullSync();
+				});
+				return this.treeView;
+			}
+		);
+
+		// ---- Ribbon: toggle remote tree ----
 		this.addRibbonIcon("cloud-obsidian-sync", "Cloud Obsidian Sync", () => {
-			if (this.auth.isLoggedIn) { this.syncEngine?.fullSync(); }
-			else { this.openLoginModal(); }
+			if (!this.auth.isLoggedIn) { this.openLoginModal(); return; }
+			this.ensureVaultName();
+			this.toggleRemoteTree();
 		});
 
+		// ---- Commands ----
 		this.addCommand({ id: "cloud-obsidian-login", name: "Login / Register", callback: () => this.openLoginModal() });
-		this.addCommand({ id: "cloud-obsidian-full-sync", name: "Full Sync", callback: () => {
+		this.addCommand({ id: "cloud-obsidian-tree", name: "Toggle Remote File Tree", callback: () => {
+			if (!this.auth.isLoggedIn) { new Notice("Please login first"); return; }
+			this.toggleRemoteTree();
+		}});
+		this.addCommand({ id: "cloud-obsidian-sync", name: "Full Sync Now", callback: () => {
 			if (this.auth.isLoggedIn) { this.syncEngine?.fullSync(); } else { new Notice("Please login first"); }
 		}});
 		this.addCommand({ id: "cloud-obsidian-push", name: "Push Now", callback: () => this.manualPush() });
-		this.addCommand({ id: "cloud-obsidian-tree", name: "Remote File Tree", callback: () => this.openRemoteTree() });
 
 		this.addSettingTab(new SettingsTab(this.app, this));
 
@@ -67,7 +86,31 @@ export default class CloudObsidianPlugin extends Plugin {
 		console.log("[Cloud-Obsidian] Plugin loaded");
 	}
 
-	onunload(): void { this.stopSyncEngine(); }
+	onunload(): void {
+		this.stopSyncEngine();
+		this.app.workspace.detachLeavesOfType(REMOTE_TREE_VIEW_TYPE);
+	}
+
+	// ---- Remote Tree View ----
+
+	private async toggleRemoteTree(): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(REMOTE_TREE_VIEW_TYPE);
+		if (existing.length > 0) {
+			existing[0].detach();
+			return;
+		}
+		await this.app.workspace.getRightLeaf(false)?.setViewState({
+			type: REMOTE_TREE_VIEW_TYPE,
+			active: true,
+		});
+		this.app.workspace.revealLeaf(
+			this.app.workspace.getLeavesOfType(REMOTE_TREE_VIEW_TYPE)[0]
+		);
+		// Refresh the tree after opening
+		setTimeout(() => this.treeView?.refresh(), 300);
+	}
+
+	// ---- Login ----
 
 	openLoginModal(): void {
 		const modal = new LoginModal(this.app, this.settings.serverUrl, async (username, password, serverUrl, isRegister) => {
@@ -93,6 +136,7 @@ export default class CloudObsidianPlugin extends Plugin {
 
 	logout(): void {
 		this.stopSyncEngine();
+		this.app.workspace.detachLeavesOfType(REMOTE_TREE_VIEW_TYPE);
 		this.auth.logout();
 		this.settings.token = undefined;
 		this.settings.username = undefined;
@@ -102,47 +146,30 @@ export default class CloudObsidianPlugin extends Plugin {
 		new Notice("Logged out");
 	}
 
-	openRemoteTree(): void {
-		if (!this.auth.isLoggedIn) { new Notice("Please login first"); return; }
-		new RemoteFileTree(this.app, this.auth, this.settings.vaultName).open();
-	}
-
 	async manualPush(): Promise<void> {
 		if (!this.auth.isLoggedIn) { new Notice("Please login first"); return; }
 		const files = this.app.vault.getMarkdownFiles();
 		const changes: FileChange[] = [];
-		for (const f of files) {
-			const content = await this.app.vault.read(f);
-			changes.push({ path: f.path, action: "update", content, clientMtime: f.stat.mtime });
-		}
+		for (const f of files) changes.push({ path: f.path, action: "update", content: await this.app.vault.read(f), clientMtime: f.stat.mtime });
 		if (changes.length > 0) { await this.syncEngine?.push(changes); new Notice(`Pushed ${changes.length} files`); }
 	}
 
 	async saveSettings(): Promise<void> { await this.saveData(this.settings); }
 	async loadSettings(): Promise<void> { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); }
 
-	/** Derive vault name from Obsidian's official API. */
 	private ensureVaultName(): void {
 		if (!this.settings.vaultName) {
-			// Obsidian official API: returns the vault directory basename
-			const name = this.app.vault.getName();
-			this.settings.vaultName = name.replace(/\s+/g, "_") || "default";
-			console.log("[Cloud-Obsidian] Detected vault name:", this.settings.vaultName);
+			this.settings.vaultName = this.app.vault.getName().replace(/\s+/g, "_") || "default";
 		}
 	}
+
+	// ---- Sync Engine ----
 
 	private startSyncEngine(): void {
 		this.stopSyncEngine();
 		this.ensureVaultName();
-
-		this.syncEngine = new SyncEngine(
-			this.app.vault, this.auth, this.settings.vaultName,
-			(status: SyncStatus) => this.updateStatusBar(status)
-		);
-
-		this.fileWatcher = new FileWatcher(this.app.vault, (changes: FileChange[]) => {
-			if (this.syncEngine) this.syncEngine.push(changes);
-		});
+		this.syncEngine = new SyncEngine(this.app.vault, this.auth, this.settings.vaultName, (s: SyncStatus) => this.updateStatusBar(s));
+		this.fileWatcher = new FileWatcher(this.app.vault, (c: FileChange[]) => { if (this.syncEngine) this.syncEngine.push(c); });
 		this.fileWatcher.start();
 		this.syncEngine.setFileWatcher(this.fileWatcher);
 		this.syncEngine.start();

@@ -1,5 +1,7 @@
-import { Modal, App } from "obsidian";
+import { ItemView, WorkspaceLeaf } from "obsidian";
 import { AuthManager } from "../auth";
+
+export const REMOTE_TREE_VIEW_TYPE = "cloud-obsidian-remote-tree";
 
 interface FileEntry {
 	path: string;
@@ -8,56 +10,79 @@ interface FileEntry {
 }
 
 /**
- * RemoteFileTree shows the server-side vault file structure in a modal.
+ * RemoteFileTree — a sidebar panel showing the server-side vault file structure.
  */
-export class RemoteFileTree extends Modal {
+export class RemoteFileTree extends ItemView {
 	private auth: AuthManager;
 	private vaultName: string;
+	private onSyncRequest: () => void;
+	private contentEl!: HTMLElement;
 
-	constructor(app: App, auth: AuthManager, vaultName: string) {
-		super(app);
+	constructor(leaf: WorkspaceLeaf, auth: AuthManager, vaultName: string, onSyncRequest: () => void) {
+		super(leaf);
 		this.auth = auth;
 		this.vaultName = vaultName;
+		this.onSyncRequest = onSyncRequest;
 	}
 
-	async onOpen(): Promise<void> {
-		const { contentEl } = this;
-		contentEl.empty();
-		contentEl.addClass("cloud-obsidian-tree-modal");
-		contentEl.createEl("h2", { text: `📁 Remote Vault: ${this.vaultName}` });
+	getViewType(): string { return REMOTE_TREE_VIEW_TYPE; }
+	getDisplayText(): string { return `Remote: ${this.vaultName}`; }
+	getIcon(): string { return "cloud-obsidian-sync"; }
 
-		// Loading
-		const loadingEl = contentEl.createEl("p", { text: "Loading..." });
+	async onOpen(): Promise<void> {
+		this.contentEl = this.containerEl.children[1];
+		this.contentEl.empty();
+		this.contentEl.addClass("cloud-obsidian-tree-panel");
+		this.render();
+	}
+
+	async onClose(): Promise<void> {
+		this.contentEl.empty();
+	}
+
+	refresh(): void { this.render(); }
+
+	private async render(): Promise<void> {
+		const root = this.contentEl;
+		root.empty();
+
+		// ---- Header ----
+		const header = root.createDiv({ cls: "cloud-obsidian-tree-header" });
+		header.createSpan({ text: `📁 ${this.vaultName}`, cls: "cloud-obsidian-tree-title" });
+
+		const btnRow = header.createDiv({ cls: "cloud-obsidian-tree-actions" });
+		const syncBtn = btnRow.createEl("button", { text: "🔄 Sync", cls: "mod-cta" });
+		syncBtn.addEventListener("click", () => this.onSyncRequest());
+		const refreshBtn = btnRow.createEl("button", { text: "↻ Refresh" });
+		refreshBtn.addEventListener("click", () => this.render());
+
+		// ---- Loading ----
+		const body = root.createDiv({ cls: "cloud-obsidian-tree-body" });
+		body.createEl("p", { text: "Loading...", cls: "cloud-obsidian-loading" });
 
 		try {
 			const resp = await this.auth.request("GET", `/api/files?vault=${encodeURIComponent(this.vaultName)}`);
 			const files: FileEntry[] = resp.files || [];
-
-			loadingEl.remove();
+			body.empty();
 
 			if (files.length === 0) {
-				contentEl.createEl("p", { text: "📭 远程仓库为空", cls: "cloud-obsidian-empty" });
+				body.createEl("p", { text: "📭 Remote vault is empty", cls: "cloud-obsidian-empty" });
 				return;
 			}
 
-			// Build tree
 			const tree = this.buildTree(files);
-			const treeEl = contentEl.createDiv({ cls: "cloud-obsidian-tree" });
+			const treeEl = body.createDiv({ cls: "cloud-obsidian-tree" });
 			this.renderTree(treeEl, tree, "");
 
-			// Summary
 			const totalSize = files.reduce((sum, f) => sum + (f.size || 0), 0);
-			contentEl.createEl("p", {
+			body.createEl("div", {
 				text: `${files.length} files · ${this.formatSize(totalSize)}`,
 				cls: "cloud-obsidian-tree-summary",
 			});
 		} catch (e: any) {
-			loadingEl.textContent = `❌ 加载失败: ${e.message}`;
+			body.empty();
+			body.createEl("p", { text: `❌ ${e.message}`, cls: "cloud-obsidian-error" });
 		}
-	}
-
-	onClose(): void {
-		this.contentEl.empty();
 	}
 
 	// ---- Tree logic ----
@@ -74,36 +99,28 @@ export class RemoteFileTree extends Modal {
 				node = node.children[parts[i]];
 			}
 			const fileName = parts[parts.length - 1];
-			if (fileName) {
-				node.files.push({ name: fileName, size: f.size });
-			}
+			if (fileName) node.files.push({ name: fileName, size: f.size });
 		}
 		return root;
 	}
 
 	private renderTree(container: HTMLElement, node: TreeNode, indent: string): void {
-		// Render subdirectories
 		const dirs = Object.keys(node.children).sort();
 		for (const dir of dirs) {
-			const dirRow = container.createDiv({ cls: "cloud-obsidian-tree-row" });
-			dirRow.createSpan({ text: `${indent}📁 ${dir}/`, cls: "cloud-obsidian-tree-dir" });
+			const row = container.createDiv({ cls: "cots-tree-row" });
+			row.createSpan({ text: `${indent}📁 ${dir}/`, cls: "cots-tree-dir" });
 			this.renderTree(container, node.children[dir], indent + "    ");
 		}
-		// Render files
-		const sorted = node.files.sort((a, b) => a.name.localeCompare(b.name));
-		for (const f of sorted) {
-			const fileRow = container.createDiv({ cls: "cloud-obsidian-tree-row" });
-			const icon = this.fileIcon(f.name);
-			fileRow.createSpan({ text: `${indent}${icon} ${f.name}`, cls: "cloud-obsidian-tree-file" });
-			if (f.size > 0) {
-				fileRow.createSpan({ text: this.formatSize(f.size), cls: "cloud-obsidian-tree-size" });
-			}
+		for (const f of node.files.sort((a, b) => a.name.localeCompare(b.name))) {
+			const row = container.createDiv({ cls: "cots-tree-row" });
+			row.createSpan({ text: `${indent}${this.icon(f.name)} ${f.name}`, cls: "cots-tree-file" });
+			if (f.size > 0) row.createSpan({ text: this.formatSize(f.size), cls: "cots-tree-size" });
 		}
 	}
 
-	private fileIcon(name: string): string {
+	private icon(name: string): string {
 		if (name.endsWith(".md")) return "📝";
-		if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".gif")) return "🖼️";
+		if (name.match(/\.(png|jpg|gif|svg|webp)$/i)) return "🖼️";
 		if (name.endsWith(".pdf")) return "📄";
 		if (name.endsWith(".canvas")) return "🎨";
 		return "📎";
