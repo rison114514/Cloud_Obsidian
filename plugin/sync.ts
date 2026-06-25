@@ -14,6 +14,8 @@ export class SyncEngine {
 	private pullInterval: ReturnType<typeof setInterval> | null = null;
 	private onStatusChange?: (status: SyncStatus) => void;
 	private recentPushTime: number = 0;
+	private pendingChanges: Map<string, { path: string; action: string; content?: string; clientMtime: number }> = new Map();
+	private pushTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(
 		vault: Vault,
@@ -29,10 +31,23 @@ export class SyncEngine {
 
 	setFileWatcher(fw: FileWatcher): void { this.fileWatcher = fw; }
 
+	/** Queue local file changes — flushed every 60s by the periodic timer. */
+	queueChanges(changes: Array<{ path: string; action: string; content?: string; clientMtime: number }>): void {
+		for (const c of changes) this.pendingChanges.set(c.path, c);
+	}
+
 	start(): void {
 		// Connect WebSocket to receive push notifications from other devices.
-		// No periodic pull — local is the source of truth, cloud follows local.
 		if (this.auth.isLoggedIn) this.connectWS();
+		// Periodic push every 60 seconds — batches all pending local changes.
+		this.pushTimer = setInterval(() => this.flushPending(), 60_000);
+	}
+
+	private async flushPending(): Promise<void> {
+		if (this.pendingChanges.size === 0) return;
+		const changes = Array.from(this.pendingChanges.values());
+		this.pendingChanges.clear();
+		await this.push(changes);
 	}
 
 	connectWS(): void {
@@ -168,6 +183,7 @@ export class SyncEngine {
 
 	stop(): void {
 		if (this.ws) { this.ws.close(); this.ws = null; }
+		if (this.pushTimer) { clearInterval(this.pushTimer); this.pushTimer = null; }
 	}
 
 	private setStatus(status: SyncStatus): void { if (this.onStatusChange) this.onStatusChange(status); }

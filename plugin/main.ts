@@ -166,7 +166,7 @@ export default class CloudObsidianPlugin extends Plugin {
 		this.stopSyncEngine();
 		this.ensureVaultName();
 		this.syncEngine = new SyncEngine(this.app.vault, this.auth, this.settings.vaultName, (s: SyncStatus) => this.updateStatusBar(s));
-		this.fileWatcher = new FileWatcher(this.app.vault, (c: FileChange[]) => { if (this.syncEngine) this.syncEngine.push(c); });
+		this.fileWatcher = new FileWatcher(this.app.vault, (c: FileChange[]) => { if (this.syncEngine) this.syncEngine.queueChanges(c); });
 		this.fileWatcher.start();
 		this.syncEngine.setFileWatcher(this.fileWatcher);
 		this.syncEngine.start();
