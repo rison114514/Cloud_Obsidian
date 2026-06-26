@@ -107,6 +107,30 @@
 	/* depth * 16px padding-left applied inline via JS */;
 }
 
+/* ---- Expand / Collapse ---- */
+
+.cots-toggle {
+	display: inline-block;
+	width: 14px;
+	font-size: 10px;
+	flex-shrink: 0;
+	user-select: none;
+}
+
+.cots-dir-row {
+	cursor: pointer;
+	user-select: none;
+	border-radius: 3px;
+}
+
+.cots-dir-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.cots-children.cots-collapsed {
+	display: none;
+}
+
 .cots-dir {
 	color: var(--text-accent);
 	font-weight: 500;

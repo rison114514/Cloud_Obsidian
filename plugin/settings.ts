@@ -42,6 +42,9 @@ export class SettingsTab extends PluginSettingTab {
 			new Setting(containerEl).setName("Push Now").addButton(btn => {
 				btn.setButtonText("Push Now").onClick(() => this.plugin.manualPush());
 			});
+			new Setting(containerEl).setName("Pull All from Remote").addButton(btn => {
+				btn.setButtonText("Pull All").onClick(() => this.plugin.manualPull());
+			});
 		} else {
 			new Setting(containerEl).setName("Server URL").addText(t => {
 				t.setPlaceholder("http://your-server:9090")

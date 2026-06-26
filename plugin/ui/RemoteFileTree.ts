@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, WorkspaceLeaf, Component } from "obsidian";
 import { AuthManager } from "../auth";
 
 export const REMOTE_TREE_VIEW_TYPE = "cloud-obsidian-remote-tree";
@@ -9,12 +9,14 @@ export class RemoteFileTree extends ItemView {
 	private auth: AuthManager;
 	private vaultName: string;
 	private onSyncRequest: () => void;
+	private onPullRequest: () => void;
 
-	constructor(leaf: WorkspaceLeaf, auth: AuthManager, vaultName: string, onSyncRequest: () => void) {
+	constructor(leaf: WorkspaceLeaf, auth: AuthManager, vaultName: string, onSyncRequest: () => void, onPullRequest: () => void) {
 		super(leaf);
 		this.auth = auth;
 		this.vaultName = vaultName;
 		this.onSyncRequest = onSyncRequest;
+		this.onPullRequest = onPullRequest;
 	}
 
 	getViewType(): string { return REMOTE_TREE_VIEW_TYPE; }
@@ -37,6 +39,7 @@ export class RemoteFileTree extends ItemView {
 		header.createSpan({ text: `📁 ${this.vaultName}`, cls: "cots-title" });
 		const btns = header.createDiv({ cls: "cots-actions" });
 		btns.createEl("button", { text: "🔼 Push All", cls: "mod-cta" }).addEventListener("click", () => this.onSyncRequest());
+		btns.createEl("button", { text: "🔽 Pull All" }).addEventListener("click", () => this.onPullRequest());
 		btns.createEl("button", { text: "↻ Refresh" }).addEventListener("click", () => this.render());
 
 		// Body
@@ -54,8 +57,8 @@ export class RemoteFileTree extends ItemView {
 			}
 
 			const tree = buildTree(files);
-			body.createDiv({ cls: "cots-tree" });
-			renderTree(body, tree, 0);
+			const treeEl = body.createDiv({ cls: "cots-tree" });
+			renderTree(this, treeEl, tree, 0);
 
 			const totalSize = files.reduce((s, f) => s + (f.size || 0), 0);
 			body.createDiv({ text: `${files.length} files · ${fmtSize(totalSize)}`, cls: "cots-summary" });
@@ -85,17 +88,39 @@ function buildTree(files: FileEntry[]): TreeNode {
 	return root;
 }
 
-function renderTree(container: HTMLElement, node: TreeNode, depth: number): void {
+function renderTree(cmp: Component, container: HTMLElement, node: TreeNode, depth: number): void {
 	const dirs = Object.keys(node.children).sort();
+
 	for (const dir of dirs) {
-		const row = container.createDiv({ cls: "cots-row" });
+		// ---- Directory row (clickable toggle) ----
+		const row = container.createDiv({ cls: "cots-row cots-dir-row" });
 		row.style.paddingLeft = `${depth * 16}px`;
+
+		const toggle = row.createSpan({ text: "▼", cls: "cots-toggle" });
 		row.createSpan({ text: `📁 ${dir}/`, cls: "cots-dir" });
-		renderTree(container, node.children[dir], depth + 1);
+
+		// ---- Children wrapper (initially visible) ----
+		const childrenWrap = container.createDiv({ cls: "cots-children" });
+		childrenWrap.style.display = "block";
+		renderTree(cmp, childrenWrap, node.children[dir], depth + 1);
+
+		// ---- Click to expand / collapse ----
+		cmp.registerDomEvent(row, "click", (e: MouseEvent) => {
+			e.stopPropagation();
+			if (childrenWrap.style.display === "none") {
+				childrenWrap.style.display = "block";
+				toggle.textContent = "▼";
+			} else {
+				childrenWrap.style.display = "none";
+				toggle.textContent = "▶";
+			}
+		});
 	}
+
+	// ---- Files (leaf nodes, not collapsible) ----
 	const fileList = node.files.sort((a, b) => a.name.localeCompare(b.name));
 	for (const f of fileList) {
-		const row = container.createDiv({ cls: "cots-row" });
+		const row = container.createDiv({ cls: "cots-row cots-file-row" });
 		row.style.paddingLeft = `${depth * 16}px`;
 		row.createSpan({ text: `${fileIcon(f.name)} ${f.name}`, cls: "cots-file" });
 		if (f.size > 0) row.createSpan({ text: fmtSize(f.size), cls: "cots-size" });

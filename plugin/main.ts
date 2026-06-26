@@ -1,4 +1,4 @@
-import { Plugin, Notice, addIcon } from "obsidian";
+import { Plugin, Notice, addIcon, TFolder, TAbstractFile, Menu } from "obsidian";
 import { AuthManager } from "./auth";
 import { SyncEngine, SyncStatus } from "./sync";
 import { FileWatcher, FileChange } from "./fileWatcher";
@@ -26,6 +26,7 @@ export default class CloudObsidianPlugin extends Plugin {
 	private fileWatcher!: FileWatcher | null;
 	private statusBarEl!: HTMLElement;
 	private treeView: RemoteFileTree | null = null;
+	private ignoredDirs: Set<string> = new Set();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -48,6 +49,8 @@ export default class CloudObsidianPlugin extends Plugin {
 			(leaf) => {
 				this.treeView = new RemoteFileTree(leaf, this.auth, this.settings.vaultName || "default", () => {
 					if (this.auth.isLoggedIn) this.syncEngine?.fullSync();
+				}, () => {
+					if (this.auth.isLoggedIn) this.syncEngine?.pullAll();
 				});
 				return this.treeView;
 			}
@@ -60,6 +63,23 @@ export default class CloudObsidianPlugin extends Plugin {
 			this.ensureVaultName();
 			this.toggleRemoteTree();
 		});
+
+		// ---- File explorer context menu (ignore / resume sync) ----
+		this.registerEvent(
+			this.app.workspace.on("file-menu", (menu: Menu, file: TAbstractFile) => {
+				if (!this.auth.isLoggedIn) return;
+				if (!(file instanceof TFolder)) return;
+				const dirPath = file.path;
+				const ignored = this.ignoredDirs.has(dirPath);
+
+				menu.addSeparator();
+				menu.addItem((item) => item
+					.setTitle(ignored ? "🔄 恢复远程同步此文件夹" : "🚫 不再远程同步此文件夹")
+					.setSection("cloud-obsidian")
+					.onClick(() => this.toggleDirectorySync(dirPath, !ignored))
+				);
+			})
+		);
 
 		// ---- Commands ----
 		this.addCommand({ id: "cloud-obsidian-login", name: "Login / Register", callback: () => this.openLoginModal() });
@@ -78,6 +98,7 @@ export default class CloudObsidianPlugin extends Plugin {
 
 		if (this.auth.isLoggedIn) {
 			this.ensureVaultName();
+			this.loadIgnoreList();
 			this.startSyncEngine();
 		}
 		console.log("[Cloud-Obsidian] Plugin loaded");
@@ -121,6 +142,7 @@ export default class CloudObsidianPlugin extends Plugin {
 				this.settings.username = this.auth.getUsername()!;
 				this.settings.userId = this.auth.getUserId()!;
 				this.ensureVaultName();
+				this.loadIgnoreList();
 				await this.saveSettings();
 				new Notice(`✅ Connected as ${username} [${this.settings.vaultName}]`);
 				this.startSyncEngine();
@@ -151,12 +173,50 @@ export default class CloudObsidianPlugin extends Plugin {
 		if (changes.length > 0) { await this.syncEngine?.push(changes); new Notice(`Pushed ${changes.length} files`); }
 	}
 
+	async manualPull(): Promise<void> {
+		if (!this.auth.isLoggedIn) { new Notice("Please login first"); return; }
+		await this.syncEngine?.pullAll();
+	}
+
 	async saveSettings(): Promise<void> { await this.saveData(this.settings); }
 	async loadSettings(): Promise<void> { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); }
 
 	private ensureVaultName(): void {
 		if (!this.settings.vaultName) {
 			this.settings.vaultName = this.app.vault.getName().replace(/\s+/g, "_") || "default";
+		}
+	}
+
+	// ---- Sync Ignore ----
+
+	private async loadIgnoreList(): Promise<void> {
+		try {
+			const resp = await this.auth.request("GET", `/api/sync/ignores?vault=${encodeURIComponent(this.settings.vaultName || "default")}`);
+			const patterns: string[] = resp.patterns || [];
+			this.ignoredDirs = new Set(patterns.map((p: string) => p.replace(/\/$/, "")));
+		} catch { /* silently ignore if server unreachable */ }
+	}
+
+	private async toggleDirectorySync(dirPath: string, ignore: boolean): Promise<void> {
+		const vaultName = this.settings.vaultName || "default";
+		try {
+			await this.loadIgnoreList();
+			const prefix = dirPath + "/";
+			let updated: string[];
+			if (ignore) {
+				const all = Array.from(this.ignoredDirs).map((p) => p + "/");
+				all.push(prefix);
+				updated = [...new Set(all)];
+			} else {
+				updated = Array.from(this.ignoredDirs)
+					.map((p) => p + "/")
+					.filter((p) => p !== prefix);
+			}
+			await this.auth.request("POST", "/api/sync/ignores", { vault: vaultName, patterns: updated });
+			await this.loadIgnoreList();
+			new Notice(ignore ? `🚫 已停止同步文件夹: ${dirPath}` : `🔄 已恢复同步文件夹: ${dirPath}`);
+		} catch (e: any) {
+			new Notice(`❌ 操作失败: ${e.message}`);
 		}
 	}
 
