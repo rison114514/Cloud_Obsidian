@@ -70,6 +70,8 @@ func main() {
 	protected.HandleFunc("/sync/push", syncH.Push).Methods("POST", "OPTIONS")
 	protected.HandleFunc("/sync/pull", syncH.Pull).Methods("POST", "OPTIONS")
 	protected.HandleFunc("/sync/status", syncH.Status).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/sync/ignores", syncH.ListIgnores).Methods("GET", "OPTIONS")
+	protected.HandleFunc("/sync/ignores", syncH.SetIgnores).Methods("POST", "OPTIONS")
 
 	protected.HandleFunc("/files", fileH.List).Methods("GET", "OPTIONS")
 	protected.HandleFunc("/files/content", fileH.GetContent).Methods("GET", "OPTIONS")

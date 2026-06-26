@@ -128,6 +128,60 @@ func (h *SyncHandler) Pull(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ---- Sync Ignore ----
+
+type IgnoreRequest struct {
+	Vault    string   `json:"vault"`
+	Patterns []string `json:"patterns"`
+}
+
+// ListIgnores handles GET /api/sync/ignores
+func (h *SyncHandler) ListIgnores(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r)
+	if claims == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	vaultName := r.URL.Query().Get("vault")
+	if vaultName == "" {
+		vaultName = "default"
+	}
+	patterns, err := h.Vaults.GetIgnorePatterns(claims.UserID, claims.Username, vaultName)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if patterns == nil {
+		patterns = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"patterns": patterns})
+}
+
+// SetIgnores handles POST /api/sync/ignores
+func (h *SyncHandler) SetIgnores(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r)
+	if claims == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var req IgnoreRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	vaultName := req.Vault
+	if vaultName == "" {
+		vaultName = "default"
+	}
+	if err := h.Vaults.SetIgnorePatterns(claims.UserID, claims.Username, vaultName, req.Patterns); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	// Delete files that now match ignore patterns (async, don't block response).
+	go h.Vaults.CleanIgnoredFiles(claims.UserID, claims.Username, vaultName)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"patterns": req.Patterns})
+}
+
 // Status handles GET /api/sync/status
 func (h *SyncHandler) Status(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r)
